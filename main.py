@@ -192,12 +192,17 @@ def perform_eda(df):
     # Visualización de la categoría de precio (si se creó)
     if 'price_category' in df.columns:
         st.write("### 2.6 Conteo de Propiedades por Categoría de Precio")
-        fig_price_cat = px.bar(df['price_category'].value_counts().reset_index(), 
-                               x='index', y='price_category',
-                               labels={'index': 'Categoría de Precio', 'price_category': 'Número de Propiedades'},
+        # Get the value counts and reset the index
+        price_category_counts = df['price_category'].value_counts().reset_index()
+        # Rename the columns for clarity and Plotly Express compatibility
+        price_category_counts.columns = ['Price Category', 'Count']
+
+        fig_price_cat = px.bar(price_category_counts,
+                               x='Price Category', # Use the new column name
+                               y='Count',          # Use the new column name
+                               labels={'Price Category': 'Categoría de Precio', 'Count': 'Número de Propiedades'},
                                title='Conteo de Propiedades por Categoría de Precio')
         st.plotly_chart(fig_price_cat)
-
 
 # Título de la aplicación Streamlit
 st.title("Análisis de Datos de Precios de Viviendas en King County")
