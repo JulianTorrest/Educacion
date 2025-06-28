@@ -46,8 +46,10 @@ def prepare_data(df):
     
     # Intentar downcast de columnas numéricas para optimizar el uso de memoria si los valores lo permiten.
     # Por ejemplo, un 'int64' puede convertirse en 'int32' o 'int16' si los números son pequeños.
+    # IMPORTANTE: Asegúrate de que 'errors=coerce' se use para convertir valores no convertibles a NaN.
     for col in ['bedrooms', 'bathrooms', 'floors', 'waterfront', 'view', 'condition', 'grade', 'sqft_above', 'sqft_basement', 'yr_built', 'yr_renovated', 'sqft_living15', 'sqft_lot15']:
         if col in df.columns:
+            # Coercer errores a NaN, que luego serán manejados por el paso de imputación
             df[col] = pd.to_numeric(df[col], errors='coerce', downcast='integer')
     st.write("Tipos de datos después de la conversión:")
     st.dataframe(df.dtypes.apply(lambda x: str(x)).reset_index().rename(columns={'index': 'Columna', 0: 'Tipo de Dato'}))
@@ -70,17 +72,19 @@ def prepare_data(df):
     missing_data = missing_data[missing_data > 0] # Filtrar solo las columnas con nulos.
     
     if not missing_data.empty:
-        st.write("Valores faltantes detectados por columna:")
+        st.write("Valores faltantes detectados por columna ANTES de la imputación:")
         st.dataframe(missing_data.to_frame(name='Valores Faltantes'))
         
         # Imputación: rellenar valores nulos.
         # Para columnas numéricas, la mediana es robusta a outliers.
-        numeric_cols_to_impute = ['bedrooms', 'bathrooms', 'sqft_living', 'sqft_lot', 'sqft_above', 'sqft_basement', 'sqft_living15', 'sqft_lot15']
+        numeric_cols_to_impute = ['bedrooms', 'bathrooms', 'sqft_living', 'sqft_lot', 'sqft_above', 'sqft_basement', 'sqft_living15', 'sqft_lot15', 'waterfront', 'view', 'condition', 'grade', 'floors', 'yr_built']
         for col in numeric_cols_to_impute:
-            if col in df.columns and df[col].isnull().any():
+            if col in df.columns and pd.api.types.is_numeric_dtype(df[col]) and df[col].isnull().any():
                 median_val = df[col].median()
                 df[col].fillna(median_val, inplace=True)
                 st.write(f"- Columna '{col}': Valores nulos imputados con la mediana ({median_val}).")
+            elif col in df.columns and not pd.api.types.is_numeric_dtype(df[col]):
+                st.warning(f"La columna '{col}' no es numérica, omitiendo la imputación con mediana.")
         
         # 'yr_renovated': Si es 0 significa que no fue renovado. Si es NaN, imputamos con 0.
         if 'yr_renovated' in df.columns and df['yr_renovated'].isnull().any():
@@ -88,6 +92,15 @@ def prepare_data(df):
             st.write("- Columna 'yr_renovated': Valores nulos imputados con 0 (asumiendo que no fue renovado).")
             
         st.write("El manejo de valores faltantes es crucial para evitar errores en análisis y modelos posteriores.")
+        # Verificación final de nulos después de la imputación en prepare_data
+        final_missing_check = df.isnull().sum()
+        final_missing_check = final_missing_check[final_missing_check > 0]
+        if not final_missing_check.empty:
+            st.warning("Advertencia: ¡Todavía hay valores faltantes después de la imputación! Detalles:")
+            st.dataframe(final_missing_check.to_frame(name='Nulos Restantes'))
+        else:
+            st.success("Todos los valores faltantes han sido tratados.")
+
     else:
         st.write("No se detectaron valores faltantes en el dataset.")
     st.write("---")
@@ -281,6 +294,31 @@ def machine_learning_model(df):
     st.write(f"Variable objetivo: 'price'")
     st.write("---")
 
+    # --- Verificación Final de Valores Finitos (CRUCIAL para Scikit-learn) ---
+    st.subheader("3.1.1 Verificación Final de Valores Finitos")
+    initial_ml_rows = X.shape[0]
+    # Reemplazar infinitos con NaN antes de eliminar los NaN para un manejo consistente
+    combined_data = pd.concat([X, y], axis=1)
+    combined_data.replace([np.inf, -np.inf], np.nan, inplace=True) 
+    
+    # Eliminar filas donde haya algún valor NaN en las características o en la variable objetivo
+    cleaned_combined_data = combined_data.dropna() 
+
+    if cleaned_combined_data.shape[0] < initial_ml_rows:
+        rows_dropped = initial_ml_rows - cleaned_combined_data.shape[0]
+        st.warning(f"¡Atención! Se detectaron y eliminaron {rows_dropped} filas con valores NaN/Infinitos en las características o la variable objetivo antes del entrenamiento del modelo.")
+    else:
+        st.write("No se detectaron valores NaN/Infinitos en las características o la variable objetivo. ¡Datos listos para el modelado!")
+
+    X = cleaned_combined_data[selected_features]
+    y = cleaned_combined_data['price']
+
+    if X.empty or y.empty:
+        st.error("Después de limpiar valores NaN/Infinitos, el conjunto de datos para el modelo está vacío o es demasiado pequeño. No se puede entrenar el modelo.")
+        return
+    # --- FIN Verificación Final de Valores Finitos ---
+
+
     # 3.2 División del Dataset (Entrenamiento y Prueba)
     st.subheader("3.2 División del Dataset (Entrenamiento y Prueba)")
     st.write("Dividimos los datos en conjuntos de entrenamiento (70%) y prueba (30%) para evaluar la capacidad del modelo de generalizar en datos no vistos.")
@@ -346,7 +384,7 @@ def display_conclusions():
 
     st.subheader("(I) Conclusiones sobre los Datos Procesados:")
     st.write("""
-    - **Calidad de Datos Mejorada:** La conversión de tipos, la eliminación de duplicados y la imputación de valores nulos han limpiado el dataset, haciéndolo más robusto para el análisis.
+    - **Calidad de Datos Mejorada:** La conversión de tipos, la eliminación de duplicados y la imputación de valores nulos han limpiado el dataset, haciéndolo más robusto para el análisis. La verificación final de valores nulos e infinitos asegura que los datos estén listos para el modelado.
     - **Manejo de Outliers:** Al limitar los valores atípicos, se reduce la influencia de puntos extremos en las distribuciones y modelos, lo que puede llevar a resultados más estables y representativos.
     - **Datos Listos para Modelado:** El preprocesamiento, incluyendo el escalado (para el modelo), prepara las características en un formato óptimo para algoritmos de Machine Learning, mejorando su rendimiento y estabilidad.
     - **Categorización para Análisis:** La creación de la categoría de precio (`price_category`) facilita el análisis segmentado, permitiendo entender mejor cómo se distribuyen las propiedades por rangos de valor.
@@ -354,12 +392,12 @@ def display_conclusions():
 
     st.subheader("(II) Conclusiones sobre la Información Observada:")
     st.write("""
-    - **Factores Clave del Precio:** La exploración visual y el mapa de calor de correlación confirman que `sqft_living`, `grade` y el número de `bathrooms` y `bedrooms` son los atributos más fuertemente correlacionados positivamente con el precio.
+    - **Factores Clave del Precio:** La exploración visual y el mapa de calor de correlación confirman que **`sqft_living`**, **`grade`** y el número de **`bathrooms`** y **`bedrooms`** son los atributos más fuertemente correlacionados positivamente con el precio.
     - **Distribución de Precios:** Los histogramas muestran que la mayoría de las propiedades tienen precios en los rangos medio-bajo a medio, con una cola derecha que indica la presencia de propiedades de alto valor.
-    - **Impacto de la Calidad (Grade):** Las propiedades con un `grade` más alto (`calidad de construcción`) tienen consistentemente precios promedio mucho mayores, como se ve en los diagramas de dispersión y cajas.
-    - **Antigüedad vs. Precio:** El año de construcción (`yr_built`) muestra una correlación interesante; las casas más antiguas pueden tener un valor histórico o haber sido renovadas, mientras que las más nuevas pueden tener precios más altos debido a modernidad.
-    - **Rendimiento del Modelo:** El modelo de Regresión Lineal, aunque básico, proporciona una base para la predicción de precios. Un valor de **R²** (coeficiente de determinación) cercano a 1 indicaría un buen ajuste del modelo. Un RMSE nos da una idea del error promedio de predicción en la misma unidad que la variable objetivo (dólares). Esto indica que, en promedio, nuestras predicciones se desvían del precio real en aproximadamente la cantidad del RMSE.
-    - **Áreas de Mejora:** Observamos que la relación entre algunas características y el precio no es puramente lineal, lo que sugiere que modelos más complejos (como Random Forest o Gradient Boosting) o ingeniería de características adicional podrían mejorar la precisión de las predicciones.
+    - **Impacto de la Calidad (Grade):** Las propiedades con un **`grade`** más alto (`calidad de construcción`) tienen consistentemente precios promedio mucho mayores, como se ve en los diagramas de dispersión y cajas.
+    - **Antigüedad vs. Precio:** El año de construcción (**`yr_built`**) muestra una correlación interesante; las casas más antiguas pueden tener un valor histórico o haber sido renovadas, mientras que las más nuevas pueden tener precios más altos debido a modernidad o mejores acabados.
+    - **Rendimiento del Modelo:** El modelo de Regresión Lineal, aunque básico, proporciona una base para la predicción de precios. El **R²** (coeficiente de determinación) indica la proporción de la varianza en la variable dependiente que es predecible a partir de las variables independientes. Un RMSE (Raíz del Error Cuadrático Medio) nos da una idea del error promedio de predicción en la misma unidad que la variable objetivo (dólares). Esto indica que, en promedio, nuestras predicciones se desvían del precio real en aproximadamente la cantidad del RMSE.
+    - **Áreas de Mejora:** Observamos que la relación entre algunas características y el precio no es puramente lineal, lo que sugiere que modelos más complejos (como Random Forest o Gradient Boosting) o ingeniería de características adicional podrían mejorar significativamente la precisión de las predicciones.
     """)
     st.write("---")
 
@@ -384,9 +422,13 @@ def main():
         section = st.sidebar.radio("Ir a la Sección:",
                                    ["Preparación de Datos", "Exploración de Datos (EDA)", "Modelo de Machine Learning", "Conclusiones"])
 
+        # Procesar los datos una vez y pasarlos a las funciones correspondientes
+        # Aseguramos que `df_processed` esté siempre disponible y actualizado para cada sección
+        df_processed = prepare_data(df_original.copy()) # Creamos una copia para no modificar el DataFrame original
+
+
         if section == "Preparación de Datos":
-            df_processed = prepare_data(df_original.copy()) # Procesar y obtener el DataFrame limpio
-            # Mostrar una vista previa de los datos procesados si la sección lo requiere
+            # Si se está en la sección de preparación, mostrar una vista previa de los datos procesados
             st.subheader("Vista Previa de los Datos Procesados")
             st.write("Aquí están las primeras 5 filas de los datos después de aplicar todas las transformaciones de limpieza y preprocesamiento.")
             st.dataframe(df_processed.head())
@@ -396,13 +438,9 @@ def main():
             st.dataframe(df_processed.isnull().sum().to_frame(name='Nulos Después de Procesar'))
 
         elif section == "Exploración de Datos (EDA)":
-            # Asegurarse de que los datos estén procesados antes de la EDA
-            df_processed = prepare_data(df_original.copy()) # Recargar y procesar para esta sección
             perform_eda(df_processed)
 
         elif section == "Modelo de Machine Learning":
-            # Asegurarse de que los datos estén procesados antes del ML
-            df_processed = prepare_data(df_original.copy()) # Recargar y procesar para esta sección
             machine_learning_model(df_processed)
 
         elif section == "Conclusiones":
