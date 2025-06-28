@@ -5,4 +5,5 @@ plotly
 seaborn
 matplotlib
 scikit-learn
+scipy
 statsmodels  
