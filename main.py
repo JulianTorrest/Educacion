@@ -361,6 +361,7 @@ def machine_learning_model(df):
     st.write(f"- **Coeficiente de Determinación (R²):** {r2:.4f}")
 
     st.write("---")
+# 3.6 Visualización de Predicciones vs. Valores Reales
     st.subheader("3.6 Visualización de Predicciones vs. Valores Reales")
     st.write("Un gráfico de dispersión de los valores reales vs. los predichos nos permite ver visualmente qué tan bien se ajusta el modelo.")
     
@@ -369,9 +370,9 @@ def machine_learning_model(df):
     
     fig_predictions = px.scatter(results_df, x='Actual Price', y='Predicted Price',
                                  title='Precios Reales vs. Precios Predichos',
-                                 labels={'Actual Price': 'Precio Real', 'Predicted Price': 'Precio Predicho'},
-                                 trendline="ols", # Añadir una línea de regresión (Ordinary Least Squares)
-                                 trendline_color_override="red") # Color de la línea de tendencia
+                                 labels={'Actual Price': 'Precio Real', 'Predicted Price': 'Precio Predicho'})
+                                 # Eliminamos: trendline="ols", # Añadir una línea de regresión (Ordinary Least Squares)
+                                 # Eliminamos: trendline_color_override="red") # Color de la línea de tendencia
     st.plotly_chart(fig_predictions)
 
     st.write("Idealmente, los puntos deberían agruparse cerca de la línea de 45 grados, indicando predicciones precisas.")
